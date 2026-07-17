@@ -97,6 +97,27 @@
     color: var(--muted);
   }
 
+  .message[hidden] { display: none; }
+  .message {
+    margin: 0 16px 8px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    font-size: 13px;
+    line-height: 1.4;
+    cursor: pointer;
+    border: 1px solid transparent;
+  }
+  .message.error {
+    background: #fdecea;
+    border-color: #f0b4ac;
+    color: #8f2114;
+  }
+  .message.success {
+    background: #eaf7ef;
+    border-color: #b7e0c4;
+    color: #1f6b3a;
+  }
+
   .board {
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -251,9 +272,15 @@
     }
     body {
       display: grid;
-      grid-template-rows: auto auto minmax(0, 1fr);
+      /* header, hint, message, board. The message row is auto (0 when the
+         banner is hidden) so the board keeps the full 1fr height; explicit
+         row assignments keep placement stable whether or not the banner is
+         a grid item. */
+      grid-template-rows: auto auto auto minmax(0, 1fr);
     }
+    #message { grid-row: 3; }
     .print-page {
+      grid-row: 4;
       min-height: 0;
       overflow: hidden;
     }
@@ -347,12 +374,17 @@
     <button type="button" class="overflow-toggle" id="menuToggle" aria-label="More actions" aria-expanded="false" aria-controls="headerActions">⋯</button>
     <div class="actions" id="headerActions">
       <button class="primary" id="exportBtn">Export PDF</button>
+      <button id="exportCsvBtn">Export CSV</button>
+      <button id="importCsvBtn">Import CSV</button>
       <button class="danger" id="resetBtn">Reset</button>
     </div>
   </div>
 </header>
+<input type="file" id="csvFileInput" accept=".csv,text/csv" hidden>
 
 <div class="hint">Drag a card into a bucket, or tap a card and pick a destination. Changes save automatically in this browser.</div>
+
+<div class="message" id="message" role="status" hidden></div>
 
 <!-- The table exists only for printing: browsers repeat a thead at the top
      of every printed page, giving the PDF a running page header. On screen
@@ -718,7 +750,11 @@ document.addEventListener("keydown", (e) => {
 document.getElementById("headerActions").addEventListener("click", (e) => {
   const btn = e.target.closest("button");
   if (!btn) return;
-  if (btn.id === "exportBtn") closeHeaderMenu();
+  // Close the mobile overflow menu after a one-shot action. Reset is excluded
+  // because its two-step confirm needs the menu to stay open between clicks.
+  if (btn.id === "exportBtn" || btn.id === "exportCsvBtn" || btn.id === "importCsvBtn") {
+    closeHeaderMenu();
+  }
 });
 
 document.getElementById("exportBtn").addEventListener("click", () => {
@@ -760,6 +796,155 @@ resetBtn.addEventListener("click", () => {
   selectedCard = null;
   state = loadState();
   render();
+});
+
+/* ---- CSV export / import ------------------------------------------------
+   The CSV has one column per bucket (header = bucket label); each column
+   lists that bucket's cards top-to-bottom, padded with empty cells so every
+   row has all four columns. Import validates the header and the card set
+   before touching saved state. */
+
+function csvEscape(value) {
+  return /[",\r\n]/.test(value) ? '"' + value.replace(/"/g, '""') + '"' : value;
+}
+
+function bucketsToCsv() {
+  const cols = BUCKETS.map((b) => ({ label: b.label, cards: state[b.id] }));
+  const maxLen = Math.max(0, ...cols.map((c) => c.cards.length));
+  const lines = [cols.map((c) => csvEscape(c.label)).join(",")];
+  for (let i = 0; i < maxLen; i++) {
+    lines.push(cols.map((c) => csvEscape(c.cards[i] || "")).join(","));
+  }
+  return lines.join("\r\n") + "\r\n";
+}
+
+/* Minimal RFC-4180 parser: handles quoted fields, escaped "" quotes, commas
+   and newlines inside quotes, and CRLF or LF line endings. */
+function parseCsv(text) {
+  const rows = [];
+  let row = [];
+  let field = "";
+  let inQuotes = false;
+  let sawAny = false;
+  const endField = () => { row.push(field); field = ""; };
+  const endRow = () => { rows.push(row); row = []; };
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    sawAny = true;
+    if (inQuotes) {
+      if (ch === '"') {
+        if (text[i + 1] === '"') { field += '"'; i++; }
+        else inQuotes = false;
+      } else {
+        field += ch;
+      }
+      continue;
+    }
+    if (ch === '"') inQuotes = true;
+    else if (ch === ",") endField();
+    else if (ch === "\n") { endField(); endRow(); }
+    else if (ch !== "\r") field += ch;
+  }
+  // Flush a trailing field/row when the file doesn't end in a newline.
+  if (field.length > 0 || row.length > 0) { endField(); endRow(); }
+  return sawAny ? rows : [];
+}
+
+/* Returns { ok: true, state } or { ok: false, error }. Pure — never mutates. */
+function csvToState(text) {
+  const rows = parseCsv(text);
+  if (rows.length === 0) return { ok: false, error: "The file is empty." };
+
+  const expected = BUCKETS.map((b) => b.label);
+  const header = rows[0].map((h) => h.trim());
+  if (header.length !== expected.length) {
+    return { ok: false, error: "Expected " + expected.length + " columns (" + expected.join(", ") + "), but found " + header.length + "." };
+  }
+
+  const colBucket = [];
+  for (const name of header) {
+    const b = BUCKETS.find((bk) => bk.label === name);
+    if (!b) return { ok: false, error: 'Unexpected column name: "' + name + '". Expected: ' + expected.join(", ") + "." };
+    if (colBucket.includes(b.id)) return { ok: false, error: 'Duplicate column: "' + name + '".' };
+    colBucket.push(b.id);
+  }
+
+  const newState = {};
+  for (const b of BUCKETS) newState[b.id] = [];
+  const known = new Set(CARD_TITLES);
+  const seen = new Set();
+  for (let r = 1; r < rows.length; r++) {
+    const cells = rows[r];
+    for (let c = 0; c < colBucket.length; c++) {
+      const title = (cells[c] || "").trim();
+      if (!title) continue;
+      if (!known.has(title)) return { ok: false, error: 'Unknown card: "' + title + '".' };
+      if (seen.has(title)) return { ok: false, error: 'Card "' + title + '" appears more than once.' };
+      seen.add(title);
+      newState[colBucket[c]].push(title);
+    }
+  }
+
+  if (seen.size !== known.size) {
+    const missing = CARD_TITLES.filter((t) => !seen.has(t));
+    return { ok: false, error: missing.length + " card(s) from the current set are missing, e.g. “" + missing[0] + "”." };
+  }
+  return { ok: true, state: newState };
+}
+
+function download(filename, text, mime) {
+  const blob = new Blob([text], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
+const messageEl = document.getElementById("message");
+let messageTimer = null;
+function showMessage(text, type) {
+  clearTimeout(messageTimer);
+  messageEl.textContent = text;
+  messageEl.className = "message " + type;
+  messageEl.hidden = false;
+  messageTimer = setTimeout(() => { messageEl.hidden = true; }, 8000);
+}
+messageEl.addEventListener("click", () => { messageEl.hidden = true; });
+
+document.getElementById("exportCsvBtn").addEventListener("click", () => {
+  download("personal-values-card-sort.csv", bucketsToCsv(), "text/csv");
+});
+
+const csvFileInput = document.getElementById("csvFileInput");
+document.getElementById("importCsvBtn").addEventListener("click", () => {
+  csvFileInput.click();
+});
+csvFileInput.addEventListener("change", () => {
+  const file = csvFileInput.files && csvFileInput.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    const result = csvToState(String(reader.result));
+    if (!result.ok) {
+      showMessage("Import failed: " + result.error, "error");
+    } else {
+      state = result.state;
+      selectedCard = null;
+      saveState();
+      render();
+      showMessage("Import successful.", "success");
+    }
+    csvFileInput.value = ""; // allow re-importing the same file
+  };
+  reader.onerror = () => {
+    showMessage("Import failed: could not read the file.", "error");
+    csvFileInput.value = "";
+  };
+  reader.readAsText(file);
 });
 
 render();
