@@ -719,7 +719,11 @@ function renderMoveBar() {
     btn.textContent = b.label;
     btn.addEventListener("click", () => {
       const card = selectedCard;
-      selectedCard = null;
+      // Auto-advance: after moving the card out, select the card that follows
+      // it in the same source column, so you can sort down a list quickly.
+      // (The card at the same index after removal is the one that was next.)
+      const nextCard = state[from][state[from].indexOf(card) + 1] || null;
+      selectedCard = nextCard;
       moveCard(card, b.id);
     });
     bar.appendChild(btn);
