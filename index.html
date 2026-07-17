@@ -4,6 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Personal Values Card Sort</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Rethink+Sans:wght@400;500;600&family=Source+Serif+4:wght@600&display=swap" rel="stylesheet">
 <style>
   :root {
     --bg: #f4f5f7;
@@ -18,7 +21,7 @@
   * { box-sizing: border-box; }
   html, body { margin: 0; }
   body {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-family: "Rethink Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     background: var(--bg);
     color: var(--ink);
     -webkit-tap-highlight-color: transparent;
@@ -37,7 +40,8 @@
     z-index: 10;
   }
   .app-header h1 {
-    font-size: 18px;
+    font-family: "Source Serif 4", Georgia, "Times New Roman", serif;
+    font-size: 24px;
     margin: 0;
   }
   .subtitle {
@@ -186,7 +190,7 @@
   /* Phone: single column */
   @media (max-width: 620px) {
     .board { grid-template-columns: 1fr; }
-    .app-header h1 { font-size: 16px; }
+    .app-header h1 { font-size: 18px; }
   }
   /* Medium + desktop: the viewport stays fixed and columns scroll internally. */
   @media (min-width: 621px) {
@@ -302,7 +306,7 @@
      it renders as plain blocks and the thead is hidden. -->
 <table class="print-page">
   <thead>
-    <tr><td class="print-page-header">Personal Values Card Sort Results | <span id="printMeta"></span></td></tr>
+    <tr><td class="print-page-header">Personal Values Card Sort Results</td></tr>
   </thead>
   <tbody>
     <tr><td>
@@ -644,11 +648,11 @@ document.getElementById("exportBtn").addEventListener("click", () => {
 });
 
 /* The browser derives the print-to-PDF filename from the document title,
-   so swap it to "cards" for the duration of the print. */
+   so swap it to "Personal Values Card Sort" for the duration of the print. */
 let titleBeforePrint = document.title;
 window.addEventListener("beforeprint", () => {
   titleBeforePrint = document.title;
-  document.title = "cards";
+  document.title = "Personal Values Card Sort";
   document.getElementById("printMeta").textContent = new Date().toLocaleString();
 });
 window.addEventListener("afterprint", () => {
