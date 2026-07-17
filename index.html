@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Card Sorter</title>
+<title>Personal Values Card Sort</title>
 <style>
   :root {
     --bg: #f4f5f7;
@@ -258,7 +258,7 @@
 
 <header class="app-header">
   <div class="titles">
-    <h1>Card Sorter</h1>
+    <h1>Personal Values Card Sort</h1>
   </div>
   <div class="actions">
     <button class="primary" id="exportBtn">Export PDF</button>
@@ -273,7 +273,7 @@
      it renders as plain blocks and the thead is hidden. -->
 <table class="print-page">
   <thead>
-    <tr><td class="print-page-header">Card Sort Results | <span id="printMeta"></span></td></tr>
+    <tr><td class="print-page-header">Personal Values Card Sort Results | <span id="printMeta"></span></td></tr>
   </thead>
   <tbody>
     <tr><td>
@@ -387,9 +387,9 @@ const CARD_BY_TITLE = new Map(CARDS.map((c) => [c.title, c]));
 /* Bucket labels — edit freely. IDs are what saved state is keyed on. */
 const BUCKETS = [
   { id: "unsorted", label: "Unsorted" },
-  { id: "b1", label: "1" },
-  { id: "b2", label: "2" },
-  { id: "b3", label: "3" },
+  { id: "b1", label: "Very Important" },
+  { id: "b2", label: "Important" },
+  { id: "b3", label: "Less Important" },
 ];
 
 const STORAGE_KEY = "card-sorter-state-v1";
@@ -484,7 +484,7 @@ function render() {
     const header = document.createElement("div");
     header.className = "bucket-header";
     const name = document.createElement("span");
-    name.textContent = b.id === "unsorted" ? b.label : "Bucket " + b.label;
+    name.textContent = b.label;
     const count = document.createElement("span");
     count.className = "count";
     count.textContent = state[b.id].length + (state[b.id].length === 1 ? " card" : " cards");
@@ -598,7 +598,7 @@ function renderMoveBar() {
   for (const b of BUCKETS) {
     if (b.id === from) continue;
     const btn = document.createElement("button");
-    btn.textContent = b.id === "unsorted" ? b.label : "Bucket " + b.label;
+    btn.textContent = b.label;
     btn.addEventListener("click", () => {
       const card = selectedCard;
       selectedCard = null;
