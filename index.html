@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Personal Values Card Sort</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -17,7 +17,6 @@
     --accent: #3b6ef5;
     --accent-soft: #e8eefe;
     --danger: #c0392b;
-    --viewport-bottom-inset: 0px;
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; }
@@ -174,7 +173,7 @@
     background: var(--panel);
     border-top: 1px solid var(--border);
     box-shadow: 0 -4px 12px rgba(15, 23, 42, 0.08);
-    bottom: var(--viewport-bottom-inset);
+    bottom: 0;
     padding: 10px 16px calc(10px + env(safe-area-inset-bottom, 0px));
     display: flex;
     flex-wrap: wrap;
@@ -221,7 +220,7 @@
   @media (max-width: 620px) {
     .board {
       grid-template-columns: 1fr;
-      padding-bottom: calc(112px + env(safe-area-inset-bottom, 0px) + var(--viewport-bottom-inset));
+      padding-bottom: calc(112px + env(safe-area-inset-bottom, 0px));
     }
     .app-header h1 { font-size: 18px; }
     .overflow-toggle { display: flex; }
@@ -485,19 +484,6 @@ const STORAGE_KEY = "card-sorter-state-v1";
 let state = loadState();
 let selectedCard = null;
 
-function updateViewportInsets() {
-  const vv = window.visualViewport;
-  const inset = vv ? Math.max(0, window.innerHeight - vv.height - vv.offsetTop) : 0;
-  document.documentElement.style.setProperty("--viewport-bottom-inset", Math.ceil(inset) + "px");
-}
-
-updateViewportInsets();
-window.addEventListener("resize", updateViewportInsets);
-if (window.visualViewport) {
-  window.visualViewport.addEventListener("resize", updateViewportInsets);
-  window.visualViewport.addEventListener("scroll", updateViewportInsets);
-}
-
 function loadState() {
   const empty = () => {
     const s = {};
@@ -747,7 +733,6 @@ let titleBeforePrint = document.title;
 window.addEventListener("beforeprint", () => {
   titleBeforePrint = document.title;
   document.title = "Personal Values Card Sort";
-  document.getElementById("printMeta").textContent = new Date().toLocaleString();
 });
 window.addEventListener("afterprint", () => {
   document.title = titleBeforePrint;
