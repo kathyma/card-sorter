@@ -51,10 +51,30 @@
     line-height: 1.4;
     color: var(--muted);
   }
-  .actions {
+  .header-actions {
     margin-left: auto;
+    position: relative;
+    display: flex;
+    align-items: center;
+  }
+  .actions {
     display: flex;
     gap: 8px;
+  }
+  .overflow-toggle {
+    display: none;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    font-size: 20px;
+    line-height: 1;
+    border-radius: 8px;
+  }
+  .overflow-toggle[aria-expanded="true"] {
+    background: var(--accent-soft);
+    border-color: var(--accent);
   }
   button {
     font: inherit;
@@ -204,6 +224,24 @@
       padding-bottom: calc(112px + env(safe-area-inset-bottom, 0px) + var(--viewport-bottom-inset));
     }
     .app-header h1 { font-size: 18px; }
+    .overflow-toggle { display: flex; }
+    .actions {
+      display: none;
+      position: absolute;
+      right: 0;
+      top: calc(100% + 4px);
+      flex-direction: column;
+      align-items: stretch;
+      min-width: 160px;
+      padding: 6px;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
+      z-index: 20;
+    }
+    .app-header.menu-open .actions { display: flex; }
+    .actions button { width: 100%; text-align: left; }
   }
   /* Medium + desktop: the viewport stays fixed and columns scroll internally. */
   @media (min-width: 621px) {
@@ -306,9 +344,12 @@
   <div class="titles">
     <h1>Personal Values Card Sort</h1>
   </div>
-  <div class="actions">
-    <button class="primary" id="exportBtn">Export PDF</button>
-    <button class="danger" id="resetBtn">Reset</button>
+  <div class="header-actions">
+    <button type="button" class="overflow-toggle" id="menuToggle" aria-label="More actions" aria-expanded="false" aria-controls="headerActions">⋯</button>
+    <div class="actions" id="headerActions">
+      <button class="primary" id="exportBtn">Export PDF</button>
+      <button class="danger" id="resetBtn">Reset</button>
+    </div>
   </div>
 </header>
 
@@ -667,6 +708,33 @@ function renderMoveBar() {
   }
 }
 
+const appHeader = document.querySelector(".app-header");
+const menuToggle = document.getElementById("menuToggle");
+function closeHeaderMenu() {
+  appHeader.classList.remove("menu-open");
+  menuToggle.setAttribute("aria-expanded", "false");
+}
+function openHeaderMenu() {
+  appHeader.classList.add("menu-open");
+  menuToggle.setAttribute("aria-expanded", "true");
+}
+menuToggle.addEventListener("click", (e) => {
+  e.stopPropagation();
+  if (appHeader.classList.contains("menu-open")) closeHeaderMenu();
+  else openHeaderMenu();
+});
+document.addEventListener("click", (e) => {
+  if (!appHeader.contains(e.target)) closeHeaderMenu();
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") closeHeaderMenu();
+});
+document.getElementById("headerActions").addEventListener("click", (e) => {
+  const btn = e.target.closest("button");
+  if (!btn) return;
+  if (btn.id === "exportBtn") closeHeaderMenu();
+});
+
 document.getElementById("exportBtn").addEventListener("click", () => {
   selectedCard = null;
   render();
@@ -697,11 +765,12 @@ function disarmReset() {
 resetBtn.addEventListener("click", () => {
   if (!resetBtn.classList.contains("confirming")) {
     resetBtn.classList.add("confirming");
-    resetBtn.textContent = "Really reset?";
+    resetBtn.textContent = "Confirm reset";
     resetArmTimer = setTimeout(disarmReset, 5000);
     return;
   }
   disarmReset();
+  closeHeaderMenu();
   localStorage.removeItem(STORAGE_KEY);
   selectedCard = null;
   state = loadState();
