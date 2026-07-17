@@ -188,15 +188,43 @@
     .board { grid-template-columns: 1fr; }
     .app-header h1 { font-size: 16px; }
   }
-  /* Medium + desktop: columns scroll internally so all buckets stay visible.
-     The height cap is desktop-only — in the medium layout the grid rows
-     control bucket heights (capping here would leave Unsorted shorter than
-     the three stacked buckets). */
+  /* Medium + desktop: the viewport stays fixed and columns scroll internally. */
   @media (min-width: 621px) {
-    .bucket-cards { overflow-y: auto; }
+    html,
+    body {
+      height: 100%;
+      overflow: hidden;
+    }
+    body {
+      display: grid;
+      grid-template-rows: auto auto minmax(0, 1fr);
+    }
+    .print-page {
+      min-height: 0;
+      overflow: hidden;
+    }
+    .print-page tbody,
+    .print-page tr,
+    .print-page td {
+      height: 100%;
+    }
+    .board {
+      height: 100%;
+      padding-bottom: 12px;
+      align-items: stretch;
+    }
+    .bucket {
+      min-height: 0;
+      height: 100%;
+    }
+    .bucket-cards {
+      min-height: 0;
+      overflow-y: auto;
+    }
   }
   @media (min-width: 981px) {
-    .bucket { max-height: calc(100vh - 130px); }
+    .board { grid-template-rows: minmax(0, 1fr); }
+    .bucket { max-height: none; }
   }
 
   /* On screen the print table renders as plain blocks, header hidden */
@@ -206,7 +234,8 @@
 
   /* Print: clean bucket listing for PDF export */
   @media print {
-    body { background: #fff; }
+    html, body { height: auto; overflow: visible; }
+    body { background: #fff; display: block; }
     .app-header, .hint, .move-bar { display: none; }
     .print-page { display: table; }
     .print-page tbody { display: table-row-group; }
