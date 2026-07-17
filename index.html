@@ -1,0 +1,612 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Card Sorter</title>
+<style>
+  :root {
+    --bg: #f4f5f7;
+    --panel: #ffffff;
+    --ink: #1f2430;
+    --muted: #6b7280;
+    --border: #e2e4e9;
+    --accent: #3b6ef5;
+    --accent-soft: #e8eefe;
+    --danger: #c0392b;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .app-header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 16px;
+    padding: 12px 16px;
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+    position: sticky;
+    top: 0;
+    z-index: 10;
+  }
+  .app-header h1 {
+    font-size: 18px;
+    margin: 0;
+  }
+  .subtitle {
+    margin: 4px 0 0;
+    font-size: 13px;
+    line-height: 1.4;
+    color: var(--muted);
+  }
+  .actions {
+    margin-left: auto;
+    display: flex;
+    gap: 8px;
+  }
+  button {
+    font: inherit;
+    font-size: 14px;
+    padding: 7px 14px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--panel);
+    color: var(--ink);
+    cursor: pointer;
+  }
+  button:hover { background: var(--accent-soft); border-color: var(--accent); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.primary:hover { filter: brightness(1.08); }
+  button.danger:hover { background: #fdecea; border-color: var(--danger); color: var(--danger); }
+  button.confirming { background: #fdecea; border-color: var(--danger); color: var(--danger); font-weight: 600; }
+
+  .hint {
+    padding: 8px 16px;
+    font-size: 13px;
+    color: var(--muted);
+  }
+
+  .board {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 12px;
+    padding: 0 16px 90px;
+    align-items: start;
+  }
+  .bucket {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    display: flex;
+    flex-direction: column;
+    min-height: 120px;
+  }
+  .bucket-header {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+    font-weight: 600;
+    position: sticky;
+    top: 0;
+    background: inherit;
+    border-radius: 12px 12px 0 0;
+  }
+  .bucket-header .count {
+    font-weight: 400;
+    font-size: 13px;
+    color: var(--muted);
+  }
+  .bucket-cards {
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    flex: 1;
+  }
+  .bucket.drag-over { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
+  .bucket.drop-target-hint { border-style: dashed; border-color: var(--accent); }
+  .empty-note {
+    font-size: 13px;
+    color: var(--muted);
+    text-align: center;
+    padding: 12px 4px;
+  }
+
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 12px;
+    font-size: 14px;
+    line-height: 1.35;
+    cursor: grab;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
+    user-select: none;
+  }
+  .card:active { cursor: grabbing; }
+  .card.selected {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px var(--accent-soft);
+  }
+  .card.dragging { opacity: 0.5; }
+  .card-title { font-weight: 500; }
+  .card-subtitle { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
+
+  .move-bar[hidden] { display: none; }
+  .move-bar {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: var(--panel);
+    border-top: 1px solid var(--border);
+    box-shadow: 0 -4px 12px rgba(15, 23, 42, 0.08);
+    padding: 10px 16px;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    z-index: 20;
+  }
+  .move-bar .label {
+    font-size: 13px;
+    color: var(--muted);
+    flex-basis: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .move-bar button { flex: 1; min-width: 70px; }
+
+  /* Medium: two columns — Unsorted on the left, buckets 1–3 stacked on the
+     right, each exactly one third of the available height */
+  @media (min-width: 621px) and (max-width: 980px) {
+    .board {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      grid-template-rows: repeat(3, minmax(0, 1fr));
+      align-items: stretch;
+      height: calc(100vh - 106px);
+      padding-bottom: 12px;
+    }
+    .bucket[data-bucket="unsorted"] {
+      grid-column: 1;
+      grid-row: 1 / span 3;
+    }
+    .bucket { min-height: 0; }
+  }
+  /* Phone: single column */
+  @media (max-width: 620px) {
+    .board { grid-template-columns: 1fr; }
+    .app-header h1 { font-size: 16px; }
+  }
+  /* Medium + desktop: columns scroll internally so all buckets stay visible.
+     The height cap is desktop-only — in the medium layout the grid rows
+     control bucket heights (capping here would leave Unsorted shorter than
+     the three stacked buckets). */
+  @media (min-width: 621px) {
+    .bucket-cards { overflow-y: auto; }
+  }
+  @media (min-width: 981px) {
+    .bucket { max-height: calc(100vh - 130px); }
+  }
+
+  /* On screen the print table renders as plain blocks, header hidden */
+  .print-page, .print-page tbody, .print-page tr, .print-page td { display: block; }
+  .print-page { width: 100%; border-collapse: collapse; }
+  .print-page thead { display: none; }
+
+  /* Print: clean bucket listing for PDF export */
+  @media print {
+    body { background: #fff; }
+    .app-header, .hint, .move-bar { display: none; }
+    .print-page { display: table; }
+    .print-page tbody { display: table-row-group; }
+    .print-page tr { display: table-row; }
+    .print-page td { display: table-cell; }
+    .print-page thead { display: table-header-group; }
+    .print-page-header {
+      font-size: 12px;
+      color: #555;
+      border-bottom: 1px solid #999;
+      padding: 0 0 6px;
+    }
+    .board {
+      display: block;
+      /* The medium-layout media query can match the print viewport's width
+         and impose a fixed height; without auto the table never fragments
+         across pages and the running thead header can't repeat. */
+      height: auto;
+      padding: 8px 0 0;
+    }
+    .bucket {
+      border: none;
+      border-radius: 0;
+      min-height: 0;
+      max-height: none;
+      margin-bottom: 16px;
+    }
+    .bucket.print-hidden { display: none; }
+    .bucket-header {
+      position: static;
+      border-bottom: 2px solid #333;
+      padding: 4px 0;
+      break-after: avoid;
+    }
+    .bucket-cards { padding: 6px 0; gap: 4px; overflow: visible; }
+    .card {
+      border: none;
+      box-shadow: none;
+      padding: 2px 0;
+      border-radius: 0;
+      break-inside: avoid;
+    }
+    .card.selected { box-shadow: none; }
+    .empty-note { text-align: left; padding: 2px 0; }
+  }
+</style>
+</head>
+<body>
+
+<header class="app-header">
+  <div class="titles">
+    <h1>Card Sorter</h1>
+  </div>
+  <div class="actions">
+    <button class="primary" id="exportBtn">Export PDF</button>
+    <button class="danger" id="resetBtn">Reset</button>
+  </div>
+</header>
+
+<div class="hint">Drag a card into a bucket, or tap a card and pick a destination. Changes save automatically in this browser.</div>
+
+<!-- The table exists only for printing: browsers repeat a thead at the top
+     of every printed page, giving the PDF a running page header. On screen
+     it renders as plain blocks and the thead is hidden. -->
+<table class="print-page">
+  <thead>
+    <tr><td class="print-page-header">Card Sort Results | <span id="printMeta"></span></td></tr>
+  </thead>
+  <tbody>
+    <tr><td>
+      <main class="board" id="board"></main>
+    </td></tr>
+  </tbody>
+</table>
+
+<div class="move-bar" id="moveBar" hidden>
+  <span class="label" id="moveLabel"></span>
+</div>
+
+<script>
+"use strict";
+
+/* ========================================================================
+   EDIT YOUR CARDS HERE.
+   One { title, subtitle } per card. Titles must be unique — the title
+   doubles as the ID that saved sorting is keyed on, so renaming a card
+   resets its bucket.
+   ======================================================================== */
+const CARDS = [
+  { title: "Placeholder card 01", subtitle: "Short placeholder description for card 01." },
+  { title: "Placeholder card 02", subtitle: "Short placeholder description for card 02." },
+  { title: "Placeholder card 03", subtitle: "Short placeholder description for card 03." },
+  { title: "Placeholder card 04", subtitle: "Short placeholder description for card 04." },
+  { title: "Placeholder card 05", subtitle: "Short placeholder description for card 05." },
+  { title: "Placeholder card 06", subtitle: "Short placeholder description for card 06." },
+  { title: "Placeholder card 07", subtitle: "Short placeholder description for card 07." },
+  { title: "Placeholder card 08", subtitle: "Short placeholder description for card 08." },
+  { title: "Placeholder card 09", subtitle: "Short placeholder description for card 09." },
+  { title: "Placeholder card 10", subtitle: "Short placeholder description for card 10." },
+  { title: "Placeholder card 11", subtitle: "Short placeholder description for card 11." },
+  { title: "Placeholder card 12", subtitle: "Short placeholder description for card 12." },
+  { title: "Placeholder card 13", subtitle: "Short placeholder description for card 13." },
+  { title: "Placeholder card 14", subtitle: "Short placeholder description for card 14." },
+  { title: "Placeholder card 15", subtitle: "Short placeholder description for card 15." },
+  { title: "Placeholder card 16", subtitle: "Short placeholder description for card 16." },
+  { title: "Placeholder card 17", subtitle: "Short placeholder description for card 17." },
+  { title: "Placeholder card 18", subtitle: "Short placeholder description for card 18." },
+  { title: "Placeholder card 19", subtitle: "Short placeholder description for card 19." },
+  { title: "Placeholder card 20", subtitle: "Short placeholder description for card 20." },
+  { title: "Placeholder card 21", subtitle: "Short placeholder description for card 21." },
+  { title: "Placeholder card 22", subtitle: "Short placeholder description for card 22." },
+  { title: "Placeholder card 23", subtitle: "Short placeholder description for card 23." },
+  { title: "Placeholder card 24", subtitle: "Short placeholder description for card 24." },
+  { title: "Placeholder card 25", subtitle: "Short placeholder description for card 25." },
+  { title: "Placeholder card 26", subtitle: "Short placeholder description for card 26." },
+  { title: "Placeholder card 27", subtitle: "Short placeholder description for card 27." },
+  { title: "Placeholder card 28", subtitle: "Short placeholder description for card 28." },
+  { title: "Placeholder card 29", subtitle: "Short placeholder description for card 29." },
+  { title: "Placeholder card 30", subtitle: "Short placeholder description for card 30." },
+  { title: "Placeholder card 31", subtitle: "Short placeholder description for card 31." },
+  { title: "Placeholder card 32", subtitle: "Short placeholder description for card 32." },
+  { title: "Placeholder card 33", subtitle: "Short placeholder description for card 33." },
+  { title: "Placeholder card 34", subtitle: "Short placeholder description for card 34." },
+  { title: "Placeholder card 35", subtitle: "Short placeholder description for card 35." },
+  { title: "Placeholder card 36", subtitle: "Short placeholder description for card 36." },
+  { title: "Placeholder card 37", subtitle: "Short placeholder description for card 37." },
+  { title: "Placeholder card 38", subtitle: "Short placeholder description for card 38." },
+  { title: "Placeholder card 39", subtitle: "Short placeholder description for card 39." },
+  { title: "Placeholder card 40", subtitle: "Short placeholder description for card 40." },
+];
+
+const CARD_TITLES = CARDS.map((c) => c.title);
+const CARD_BY_TITLE = new Map(CARDS.map((c) => [c.title, c]));
+
+/* Bucket labels — edit freely. IDs are what saved state is keyed on. */
+const BUCKETS = [
+  { id: "unsorted", label: "Unsorted" },
+  { id: "b1", label: "1" },
+  { id: "b2", label: "2" },
+  { id: "b3", label: "3" },
+];
+
+const STORAGE_KEY = "card-sorter-state-v1";
+
+/* state: bucket id -> ordered array of card titles */
+let state = loadState();
+let selectedCard = null;
+
+function loadState() {
+  const empty = () => {
+    const s = {};
+    for (const b of BUCKETS) s[b.id] = [];
+    s.unsorted = CARD_TITLES.slice();
+    return s;
+  };
+  let saved = null;
+  try {
+    saved = JSON.parse(localStorage.getItem(STORAGE_KEY));
+  } catch (e) {
+    saved = null;
+  }
+  if (!saved || typeof saved !== "object") return empty();
+
+  // Reconcile saved state with the current CARDS list: keep placements for
+  // cards that still exist, drop removed cards, add new cards to unsorted.
+  const s = {};
+  const known = new Set(CARD_TITLES);
+  const placed = new Set();
+  for (const b of BUCKETS) {
+    const savedList = Array.isArray(saved[b.id]) ? saved[b.id] : [];
+    s[b.id] = savedList.filter((c) => known.has(c) && !placed.has(c));
+    s[b.id].forEach((c) => placed.add(c));
+  }
+  for (const c of CARD_TITLES) {
+    if (!placed.has(c)) s.unsorted.push(c);
+  }
+  return s;
+}
+
+function saveState() {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  } catch (e) {
+    // Private-browsing modes can block localStorage; sorting still works
+    // for the session, it just won't persist.
+  }
+}
+
+/* index is the insertion position in the target bucket, computed with the
+   moved card already excluded; null/undefined appends at the end. */
+function moveCard(card, toBucket, index) {
+  for (const b of BUCKETS) {
+    const i = state[b.id].indexOf(card);
+    if (i !== -1) state[b.id].splice(i, 1);
+  }
+  if (index == null || index >= state[toBucket].length) {
+    state[toBucket].push(card);
+  } else {
+    state[toBucket].splice(index, 0, card);
+  }
+  saveState();
+  render();
+}
+
+function bucketOf(card) {
+  for (const b of BUCKETS) {
+    if (state[b.id].includes(card)) return b.id;
+  }
+  return null;
+}
+
+function selectCard(card) {
+  selectedCard = selectedCard === card ? null : card;
+  render();
+}
+
+function render() {
+  const board = document.getElementById("board");
+  board.textContent = "";
+
+  for (const b of BUCKETS) {
+    const section = document.createElement("section");
+    section.className = "bucket";
+    section.dataset.bucket = b.id;
+    if (b.id === "unsorted" && state.unsorted.length === 0) {
+      section.classList.add("print-hidden");
+    }
+    if (selectedCard && bucketOf(selectedCard) !== b.id) {
+      section.classList.add("drop-target-hint");
+    }
+
+    const header = document.createElement("div");
+    header.className = "bucket-header";
+    const name = document.createElement("span");
+    name.textContent = b.id === "unsorted" ? b.label : "Bucket " + b.label;
+    const count = document.createElement("span");
+    count.className = "count";
+    count.textContent = state[b.id].length + (state[b.id].length === 1 ? " card" : " cards");
+    header.append(name, count);
+
+    const list = document.createElement("div");
+    list.className = "bucket-cards";
+    for (const card of state[b.id]) {
+      list.appendChild(renderCard(card));
+    }
+    if (state[b.id].length === 0) {
+      const note = document.createElement("div");
+      note.className = "empty-note";
+      note.textContent = b.id === "unsorted" ? "All cards sorted 🎉" : "Empty";
+      list.appendChild(note);
+    }
+
+    section.append(header, list);
+
+    // Drag-and-drop target
+    section.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      section.classList.add("drag-over");
+    });
+    section.addEventListener("dragleave", () => section.classList.remove("drag-over"));
+    section.addEventListener("drop", (e) => {
+      e.preventDefault();
+      section.classList.remove("drag-over");
+      const card = e.dataTransfer.getData("text/plain");
+      if (!card || bucketOf(card) === null) return;
+      // Insert at the drop position: the card lands above the first card
+      // whose vertical midpoint is below the pointer. Works for reordering
+      // within the same bucket too.
+      const others = [...section.querySelectorAll(".bucket-cards .card")]
+        .filter((el) => el.dataset.card !== card);
+      let index = others.length;
+      for (let i = 0; i < others.length; i++) {
+        const r = others[i].getBoundingClientRect();
+        if (e.clientY < r.top + r.height / 2) { index = i; break; }
+      }
+      moveCard(card, b.id, index);
+    });
+
+    // Tap-to-assign target: tapping a bucket while a card is selected moves it;
+    // tapping the bucket it's already in just deselects.
+    section.addEventListener("click", (e) => {
+      if (!selectedCard) return;
+      if (e.target.closest(".card")) return; // card taps handle selection
+      const card = selectedCard;
+      selectedCard = null;
+      if (bucketOf(card) !== b.id) {
+        moveCard(card, b.id);
+      } else {
+        render();
+      }
+    });
+
+    board.appendChild(section);
+  }
+
+  renderMoveBar();
+}
+
+function renderCard(card) {
+  const el = document.createElement("div");
+  el.className = "card";
+  el.dataset.card = card;
+  const title = document.createElement("div");
+  title.className = "card-title";
+  title.textContent = card;
+  el.appendChild(title);
+  const subtitle = CARD_BY_TITLE.get(card)?.subtitle;
+  if (subtitle) {
+    const sub = document.createElement("div");
+    sub.className = "card-subtitle";
+    sub.textContent = subtitle;
+    el.appendChild(sub);
+  }
+  el.draggable = true;
+  if (card === selectedCard) el.classList.add("selected");
+
+  el.addEventListener("click", () => selectCard(card));
+  el.addEventListener("dragstart", (e) => {
+    e.dataTransfer.setData("text/plain", card);
+    e.dataTransfer.effectAllowed = "move";
+    el.classList.add("dragging");
+    if (selectedCard) {
+      selectedCard = null;
+      renderMoveBar();
+    }
+  });
+  el.addEventListener("dragend", () => el.classList.remove("dragging"));
+  return el;
+}
+
+function renderMoveBar() {
+  const bar = document.getElementById("moveBar");
+  bar.textContent = "";
+  if (!selectedCard) {
+    bar.hidden = true;
+    return;
+  }
+  bar.hidden = false;
+
+  const label = document.createElement("span");
+  label.className = "label";
+  label.textContent = "Move “" + selectedCard + "” to:";
+  bar.appendChild(label);
+
+  const from = bucketOf(selectedCard);
+  for (const b of BUCKETS) {
+    if (b.id === from) continue;
+    const btn = document.createElement("button");
+    btn.textContent = b.id === "unsorted" ? b.label : "Bucket " + b.label;
+    btn.addEventListener("click", () => {
+      const card = selectedCard;
+      selectedCard = null;
+      moveCard(card, b.id);
+    });
+    bar.appendChild(btn);
+  }
+}
+
+document.getElementById("exportBtn").addEventListener("click", () => {
+  selectedCard = null;
+  render();
+  window.print();
+});
+
+/* The browser derives the print-to-PDF filename from the document title,
+   so swap it to "cards" for the duration of the print. */
+let titleBeforePrint = document.title;
+window.addEventListener("beforeprint", () => {
+  titleBeforePrint = document.title;
+  document.title = "cards";
+  document.getElementById("printMeta").textContent = new Date().toLocaleString();
+});
+window.addEventListener("afterprint", () => {
+  document.title = titleBeforePrint;
+});
+
+/* In-page two-step reset (native confirm() is blocked in some embedded
+   browsers): first click arms the button, second click resets. */
+const resetBtn = document.getElementById("resetBtn");
+let resetArmTimer = null;
+function disarmReset() {
+  clearTimeout(resetArmTimer);
+  resetBtn.classList.remove("confirming");
+  resetBtn.textContent = "Reset";
+}
+resetBtn.addEventListener("click", () => {
+  if (!resetBtn.classList.contains("confirming")) {
+    resetBtn.classList.add("confirming");
+    resetBtn.textContent = "Really reset?";
+    resetArmTimer = setTimeout(disarmReset, 5000);
+    return;
+  }
+  disarmReset();
+  localStorage.removeItem(STORAGE_KEY);
+  selectedCard = null;
+  state = loadState();
+  render();
+});
+
+render();
+</script>
+</body>
+</html>
