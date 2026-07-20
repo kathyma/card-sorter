@@ -518,12 +518,14 @@ const CARDS = [
 const CARD_TITLES = CARDS.map((c) => c.title);
 const CARD_BY_TITLE = new Map(CARDS.map((c) => [c.title, c]));
 
-/* Bucket labels — edit freely. IDs are what saved state is keyed on. */
+/* Bucket labels — edit freely. IDs are what saved state is keyed on. The
+   optional `key` is the non-mobile hotkey that moves the selected card here;
+   omit it for a bucket that shouldn't have one. */
 const BUCKETS = [
-  { id: "unsorted", label: "Unsorted" },
-  { id: "b1", label: "Very Important" },
-  { id: "b2", label: "Important" },
-  { id: "b3", label: "Less Important" },
+  { id: "unsorted", label: "Unsorted", key: "0" },
+  { id: "b1", label: "Very Important", key: "1" },
+  { id: "b2", label: "Important", key: "2" },
+  { id: "b3", label: "Less Important", key: "3" },
 ];
 
 const STORAGE_KEY = "card-sorter-state-v1";
@@ -590,7 +592,7 @@ function moveCard(card, toBucket, index) {
 
 /* Move the selected card to a bucket, then auto-advance selection to the
    card that followed it in the source column (shared by the move-bar buttons
-   and the 1/2/3 hotkeys). No-op when the card is already in that bucket. */
+   and the bucket hotkeys). No-op when the card is already in that bucket. */
 function moveSelectedTo(bucketId) {
   if (!selectedCard) return;
   const from = bucketOf(selectedCard);
@@ -745,11 +747,10 @@ function renderMoveBar() {
   for (const b of BUCKETS) {
     if (b.id === from) continue;
     const btn = document.createElement("button");
-    const key = HOTKEYS[b.id];
-    if (key) {
+    if (b.key) {
       const kbd = document.createElement("kbd");
       kbd.className = "key-hint";
-      kbd.textContent = key;
+      kbd.textContent = b.key;
       btn.append(kbd, document.createTextNode(b.label));
     } else {
       btn.textContent = b.label;
@@ -781,12 +782,14 @@ document.addEventListener("keydown", (e) => {
   if (e.key === "Escape") closeHeaderMenu();
 });
 /* ---- Keyboard sorting (non-mobile) -------------------------------------
-   1/2/3 move the selected card to Very Important / Important / Less
-   Important; arrow keys move the selection between cards and buckets; Esc
+   Each bucket's `key` (0–3, see BUCKETS) moves the selected card into that
+   bucket; arrow keys move the selection between cards and buckets; Esc
    deselects. Disabled on phones (no keyboard, move-bar is the UI) and while
    typing in a field or holding a browser-shortcut modifier. */
-const HOTKEYS = { unsorted: "0", b1: "1", b2: "2", b3: "3" };
-const KEY_TO_BUCKET = { "0": "unsorted", "1": "b1", "2": "b2", "3": "b3" };
+const KEY_TO_BUCKET = {};
+for (const b of BUCKETS) {
+  if (b.key) KEY_TO_BUCKET[b.key] = b.id;
+}
 
 function keyboardSortingActive(e) {
   if (e.metaKey || e.ctrlKey || e.altKey) return false;
