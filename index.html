@@ -92,10 +92,15 @@
   button.confirming { background: #fdecea; border-color: var(--danger); color: var(--danger); font-weight: 600; }
 
   .hint {
+    display: flex;
+    align-items: center;
+    gap: 12px;
     padding: 8px 16px;
     font-size: 13px;
     color: var(--muted);
   }
+  .hint-text { flex: 1; }
+  .hint button { flex-shrink: 0; }
 
   .message[hidden] { display: none; }
   .message {
@@ -145,10 +150,27 @@
     background: inherit;
     border-radius: 12px 12px 0 0;
   }
+  .bucket-title {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 2px 8px;
+    flex: 1;
+    min-width: 0;
+  }
+  .bucket-name {
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
   .bucket-header .count {
     font-weight: 400;
     font-size: 13px;
     color: var(--muted);
+    flex-shrink: 0;
+    white-space: nowrap;
   }
   .bucket-cards {
     padding: 10px;
@@ -167,24 +189,75 @@
   }
 
   .card {
+    position: relative;
     background: var(--panel);
     border: 1px solid var(--border);
     border-radius: 8px;
-    padding: 10px 12px;
+    padding: 10px 36px 10px 12px;
     font-size: 14px;
     line-height: 1.35;
     cursor: grab;
     box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
     user-select: none;
   }
+  /* Cards with no hide button don't reserve space for it. */
+  .card.no-hide { padding-right: 12px; }
   .card:active { cursor: grabbing; }
   .card.selected {
     border-color: var(--accent);
     box-shadow: 0 0 0 2px var(--accent-soft);
   }
   .card.dragging { opacity: 0.5; }
+  /* A hidden card only shows while "Show hidden" is on. It is parked: dimmed,
+     dashed, and inert (no drag / no select), with the eye button as its only
+     action. */
+  .card.is-hidden {
+    opacity: 0.55;
+    border-style: dashed;
+    cursor: default;
+  }
+  .card.is-hidden:active { cursor: default; }
   .card-title { font-weight: 500; }
   .card-subtitle { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
+
+  /* Per-card hide / unhide control, pinned to the card's top-right corner.
+     Hidden by default; the rules just below decide when it becomes visible. */
+  .card-hide {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+    opacity: 0;
+  }
+  /* Reveal the control on hover/focus (pointer devices), on the selected card
+     (the path on touch, which has no hover), and always on a revealed hidden
+     card so it can be unhidden. */
+  .card:hover .card-hide,
+  .card:focus-within .card-hide,
+  .card.selected .card-hide,
+  .card.is-hidden .card-hide { opacity: 1; }
+  .card-hide:hover { background: var(--accent-soft); color: var(--accent); }
+
+  /* "Hide all" control in a bucket header (very/important/less buckets only). */
+  .hide-all {
+    margin-left: auto;
+    flex-shrink: 0;
+    padding: 2px 8px;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--muted);
+  }
+  .hide-all:hover { color: var(--accent); }
 
   .move-bar[hidden] { display: none; }
   .move-bar {
@@ -359,7 +432,12 @@
       break-inside: avoid;
     }
     .card.selected { box-shadow: none; }
+    /* Controls and hidden-card bookkeeping never print; the PDF is a clean,
+       WYSIWYG snapshot. Revealed hidden cards print as normal entries. */
+    .card-hide, .hide-all, .count-hidden { display: none; }
+    .card.is-hidden { opacity: 1; border-style: none; }
     .empty-note { text-align: left; padding: 2px 0; }
+    .hidden-note { display: none; }
   }
 </style>
 </head>
@@ -381,7 +459,10 @@
 </header>
 <input type="file" id="csvFileInput" accept=".csv,text/csv" hidden>
 
-<div class="hint">Drag a card into a bucket, or tap a card and pick a destination. Changes save automatically in this browser.</div>
+<div class="hint">
+  <span class="hint-text">Drag a card into a bucket, or tap a card and pick a destination. Changes save automatically in this browser.</span>
+  <button id="toggleHiddenBtn" aria-pressed="false" hidden>Show hidden</button>
+</div>
 
 <div class="message" id="message" role="status" hidden></div>
 
@@ -516,12 +597,16 @@ const STORAGE_KEY = "card-sorter-state-v1";
 /* state: bucket id -> ordered array of card titles */
 let state = loadState();
 let selectedCard = null;
+/* Session-only view toggle: when true, hidden cards are shown (dimmed). Not
+   persisted, so every open starts decluttered. */
+let showHidden = false;
 
 function loadState() {
   const empty = () => {
     const s = {};
     for (const b of BUCKETS) s[b.id] = [];
     s.unsorted = CARD_TITLES.slice();
+    s.hidden = [];
     return s;
   };
   let saved = null;
@@ -545,6 +630,10 @@ function loadState() {
   for (const c of CARD_TITLES) {
     if (!placed.has(c)) s.unsorted.push(c);
   }
+  // Hidden is a set of card titles orthogonal to bucket placement; keep only
+  // ones that still exist, de-duplicated.
+  const savedHidden = Array.isArray(saved.hidden) ? saved.hidden : [];
+  s.hidden = [...new Set(savedHidden.filter((c) => known.has(c)))];
   return s;
 }
 
@@ -581,7 +670,9 @@ function moveSelectedTo(bucketId) {
   const from = bucketOf(selectedCard);
   if (from === bucketId) return;
   const card = selectedCard;
-  const nextCard = state[from][state[from].indexOf(card) + 1] || null;
+  // Auto-advance to the next *selectable* card, skipping any hidden ones.
+  const vis = selectableCardsIn(from);
+  const nextCard = vis[vis.indexOf(card) + 1] || null;
   selectedCard = nextCard;
   moveCard(card, bucketId);
 }
@@ -591,6 +682,47 @@ function bucketOf(card) {
     if (state[b.id].includes(card)) return b.id;
   }
   return null;
+}
+
+/* ---- Hidden cards -------------------------------------------------------
+   "Hidden" is a view-level flag orthogonal to placement. A hidden card keeps
+   its bucket and order but is parked: it only appears while showHidden is on,
+   and even then it is inert (not selectable, not draggable). */
+function isHidden(card) { return state.hidden.includes(card); }
+/* Cards eligible for selection/sorting — never hidden, regardless of view. */
+function selectableCardsIn(bucketId) { return state[bucketId].filter((c) => !isHidden(c)); }
+/* Cards actually drawn in a bucket: all when revealing, else the selectable ones. */
+function renderedCardsIn(bucketId) { return showHidden ? state[bucketId] : selectableCardsIn(bucketId); }
+function hiddenCountIn(bucketId) { return state[bucketId].filter(isHidden).length; }
+
+function hideCard(card) {
+  if (isHidden(card)) return;
+  if (selectedCard === card) {
+    // Advance selection to the next still-selectable sibling, else clear it.
+    const vis = selectableCardsIn(bucketOf(card));
+    selectedCard = vis[vis.indexOf(card) + 1] || null;
+  }
+  state.hidden.push(card);
+  saveState();
+  render();
+}
+
+function unhideCard(card) {
+  const i = state.hidden.indexOf(card);
+  if (i === -1) return;
+  state.hidden.splice(i, 1);
+  if (state.hidden.length === 0) showHidden = false; // nothing left to reveal
+  saveState();
+  render();
+}
+
+function hideAllIn(bucketId) {
+  for (const c of state[bucketId]) {
+    if (!isHidden(c)) state.hidden.push(c);
+  }
+  if (selectedCard && bucketOf(selectedCard) === bucketId) selectedCard = null;
+  saveState();
+  render();
 }
 
 function selectCard(card) {
@@ -603,10 +735,14 @@ function render() {
   board.textContent = "";
 
   for (const b of BUCKETS) {
+    const rendered = renderedCardsIn(b.id);
+    const hiddenN = hiddenCountIn(b.id);
+
     const section = document.createElement("section");
     section.className = "bucket";
     section.dataset.bucket = b.id;
-    if (b.id === "unsorted" && state.unsorted.length === 0) {
+    // Keep any bucket with no visible cards out of the PDF, heading and all.
+    if (rendered.length === 0) {
       section.classList.add("print-hidden");
     }
     if (selectedCard && bucketOf(selectedCard) !== b.id) {
@@ -615,22 +751,51 @@ function render() {
 
     const header = document.createElement("div");
     header.className = "bucket-header";
+    // Label + count share a group that wraps: when the column is too narrow the
+    // count drops onto a second line under the label, and if the label itself
+    // still won't fit it truncates to a single line.
+    const titleGroup = document.createElement("div");
+    titleGroup.className = "bucket-title";
     const name = document.createElement("span");
+    name.className = "bucket-name";
     name.textContent = b.label;
+    name.title = b.label; // full label on hover when truncated
     const count = document.createElement("span");
     count.className = "count";
-    count.textContent = state[b.id].length + (state[b.id].length === 1 ? " card" : " cards");
-    header.append(name, count);
+    // The number reflects what's shown (rendered), so it always matches the
+    // cards beneath it, including in the WYSIWYG PDF. The "· N hidden"
+    // annotation is a screen-only note that the PDF strips.
+    const shown = rendered.length;
+    count.textContent = shown + (shown === 1 ? " card" : " cards");
+    if (hiddenN > 0) {
+      const ann = document.createElement("span");
+      ann.className = "count-hidden";
+      ann.textContent = " · " + hiddenN + " hidden";
+      count.appendChild(ann);
+    }
+    titleGroup.append(name, count);
+    header.appendChild(titleGroup);
+    if (b.id !== "unsorted" && selectableCardsIn(b.id).length > 0) {
+      header.appendChild(makeHideAllButton(b.id, b.label));
+    }
 
     const list = document.createElement("div");
     list.className = "bucket-cards";
-    for (const card of state[b.id]) {
-      list.appendChild(renderCard(card));
+    for (const card of rendered) {
+      list.appendChild(renderCard(card, b.id));
     }
-    if (state[b.id].length === 0) {
+    if (rendered.length === 0) {
       const note = document.createElement("div");
-      note.className = "empty-note";
-      note.textContent = b.id === "unsorted" ? "All cards sorted 🎉" : "Empty";
+      if (hiddenN > 0) {
+        // No visible cards here means every card in the bucket is hidden. The
+        // header's "· N hidden" already gives the count, so don't repeat it.
+        // Screen-only affordance; the WYSIWYG PDF strips it via .hidden-note.
+        note.className = "empty-note hidden-note";
+        note.textContent = "All cards hidden";
+      } else {
+        note.className = "empty-note";
+        note.textContent = b.id === "unsorted" ? "All cards sorted 🎉" : "Empty";
+      }
       list.appendChild(note);
     }
 
@@ -647,16 +812,21 @@ function render() {
       section.classList.remove("drag-over");
       const card = e.dataTransfer.getData("text/plain");
       if (!card || bucketOf(card) === null) return;
-      // Insert at the drop position: the card lands above the first card
-      // whose vertical midpoint is below the pointer. Works for reordering
-      // within the same bucket too.
+      // Find the card the drop lands above: the first rendered card whose
+      // vertical midpoint is below the pointer. Anchoring on that card's title
+      // (rather than a raw DOM index) keeps ordering correct even when hidden
+      // cards are collapsed and absent from the DOM.
       const others = [...section.querySelectorAll(".bucket-cards .card")]
         .filter((el) => el.dataset.card !== card);
-      let index = others.length;
-      for (let i = 0; i < others.length; i++) {
-        const r = others[i].getBoundingClientRect();
-        if (e.clientY < r.top + r.height / 2) { index = i; break; }
+      let beforeCard = null;
+      for (const otherEl of others) {
+        const r = otherEl.getBoundingClientRect();
+        if (e.clientY < r.top + r.height / 2) { beforeCard = otherEl.dataset.card; break; }
       }
+      // Translate the anchor to an index in the target's card array, computed
+      // with the dragged card excluded (moveCard removes it before inserting).
+      const arrWithout = state[b.id].filter((c) => c !== card);
+      const index = beforeCard == null ? arrWithout.length : arrWithout.indexOf(beforeCard);
       moveCard(card, b.id, index);
     });
 
@@ -678,12 +848,25 @@ function render() {
   }
 
   renderMoveBar();
+  renderRevealToggle();
 }
 
-function renderCard(card) {
+/* Eye icons for the hide control (feather-style). The button shows the action
+   it performs: eye-off = "hide this", eye = "show this". */
+const EYE_OFF_SVG = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20C5 20 1 12 1 12a18.5 18.5 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>';
+const EYE_SVG = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>';
+
+function renderCard(card, bucketId) {
   const el = document.createElement("div");
   el.className = "card";
   el.dataset.card = card;
+  const hidden = isHidden(card);
+  if (hidden) el.classList.add("is-hidden");
+  // Unsorted cards can't be hidden, so they get no eye button (and reclaim the
+  // space it would reserve). A parked card always keeps its button to unhide.
+  const canToggle = hidden || bucketId !== "unsorted";
+  if (!canToggle) el.classList.add("no-hide");
+
   const title = document.createElement("div");
   title.className = "card-title";
   title.textContent = card;
@@ -695,6 +878,25 @@ function renderCard(card) {
     sub.textContent = subtitle;
     el.appendChild(sub);
   }
+
+  if (canToggle) {
+    const toggle = document.createElement("button");
+    toggle.type = "button";
+    toggle.className = "card-hide";
+    toggle.setAttribute("aria-label", (hidden ? "Show " : "Hide ") + card);
+    toggle.title = hidden ? "Unhide" : "Hide";
+    toggle.innerHTML = hidden ? EYE_SVG : EYE_OFF_SVG;
+    toggle.addEventListener("click", (e) => {
+      e.stopPropagation(); // don't select the card or trigger tap-to-assign
+      if (hidden) unhideCard(card);
+      else hideCard(card);
+    });
+    el.appendChild(toggle);
+  }
+
+  // A hidden card is parked: no selection, no drag. Only its eye button works.
+  if (hidden) return el;
+
   el.draggable = true;
   if (card === selectedCard) el.classList.add("selected");
 
@@ -716,6 +918,43 @@ function renderCard(card) {
     render();
   });
   return el;
+}
+
+/* Bucket-header control that hides every card in a column, with a two-step
+   confirm (matching Reset). First click arms it, second click commits. */
+function makeHideAllButton(bucketId, label) {
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "hide-all";
+  btn.textContent = "Hide all";
+  btn.setAttribute("aria-label", "Hide all cards in " + label);
+  let timer = null;
+  btn.addEventListener("click", (e) => {
+    e.stopPropagation(); // never let this act as a tap-to-assign on the bucket
+    if (!btn.classList.contains("confirming")) {
+      btn.classList.add("confirming");
+      btn.textContent = "Hide " + selectableCardsIn(bucketId).length + "?";
+      timer = setTimeout(() => {
+        btn.classList.remove("confirming");
+        btn.textContent = "Hide all";
+      }, 5000);
+      return;
+    }
+    clearTimeout(timer);
+    hideAllIn(bucketId); // re-renders, replacing this button
+  });
+  return btn;
+}
+
+/* Toolbar toggle for revealing hidden cards. Only shown when something is
+   hidden; label reflects the current view. */
+function renderRevealToggle() {
+  const btn = document.getElementById("toggleHiddenBtn");
+  const n = state.hidden.length;
+  if (n === 0) { btn.hidden = true; showHidden = false; return; }
+  btn.hidden = false;
+  btn.textContent = showHidden ? "Hide hidden" : "Show hidden (" + n + ")";
+  btn.setAttribute("aria-pressed", showHidden ? "true" : "false");
 }
 
 function renderMoveBar() {
@@ -800,14 +1039,15 @@ function scrollSelectedIntoView() {
 function navigateSelection(dir) {
   if (!selectedCard) {
     for (const b of BUCKETS) {
-      if (state[b.id].length) { selectedCard = state[b.id][0]; break; }
+      const vis = selectableCardsIn(b.id);
+      if (vis.length) { selectedCard = vis[0]; break; }
     }
     render();
     scrollSelectedIntoView();
     return;
   }
   const bId = bucketOf(selectedCard);
-  const list = state[bId];
+  const list = selectableCardsIn(bId);
   const ci = list.indexOf(selectedCard);
   if (dir === "up" || dir === "down") {
     const ni = ci + (dir === "down" ? 1 : -1);
@@ -818,7 +1058,7 @@ function navigateSelection(dir) {
     const bi = BUCKETS.findIndex((b) => b.id === bId);
     let next = null;
     for (let j = bi + step; j >= 0 && j < BUCKETS.length; j += step) {
-      const nl = state[BUCKETS[j].id];
+      const nl = selectableCardsIn(BUCKETS[j].id);
       if (nl.length) { next = nl[Math.min(ci, nl.length - 1)]; break; }
     }
     if (!next) return;
@@ -863,6 +1103,11 @@ document.getElementById("headerActions").addEventListener("click", (e) => {
   }
 });
 
+document.getElementById("toggleHiddenBtn").addEventListener("click", () => {
+  showHidden = !showHidden;
+  render();
+});
+
 document.getElementById("exportBtn").addEventListener("click", () => {
   selectedCard = null;
   render();
@@ -900,6 +1145,7 @@ resetBtn.addEventListener("click", () => {
   closeHeaderMenu();
   localStorage.removeItem(STORAGE_KEY);
   selectedCard = null;
+  showHidden = false;
   state = loadState();
   render();
 });
@@ -977,6 +1223,7 @@ function csvToState(text) {
 
   const newState = {};
   for (const b of BUCKETS) newState[b.id] = [];
+  newState.hidden = []; // import produces a fresh, fully-visible board
   const known = new Set(CARD_TITLES);
   const seen = new Set();
   for (let r = 1; r < rows.length; r++) {
@@ -1040,6 +1287,7 @@ csvFileInput.addEventListener("change", () => {
     } else {
       state = result.state;
       selectedCard = null;
+      showHidden = false;
       saveState();
       render();
       showMessage("Import successful.", "success");
