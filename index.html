@@ -17,6 +17,9 @@
     --accent: #3b6ef5;
     --accent-soft: #e8eefe;
     --danger: #c0392b;
+    --star: #b8790f;
+    --star-tint: #faeeda;
+    --star-border: #f0c97a;
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; }
@@ -118,12 +121,52 @@
     color: #1f6b3a;
   }
 
+  /* "Exit focus mode" lives in the header actions (so it collapses into the
+     overflow menu on mobile like the other buttons). */
+  .exit-focus {
+    background: var(--star-tint);
+    border-color: var(--star-border);
+    color: #8a5a08;
+    font-weight: 600;
+  }
+  .exit-focus:hover { background: var(--star-tint); border-color: var(--star); }
+
+  /* Call-to-action shown once everything is sorted, inviting the user into
+     focus mode. It's the only entry point, so it isn't dismissible. */
+  .focus-banner[hidden] { display: none; }
+  .focus-banner {
+    margin: 0 16px 8px;
+    padding: 10px 14px;
+    border-radius: 10px;
+    background: var(--star-tint);
+    border: 1px solid var(--star-border);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-size: 14px;
+  }
+  .focus-banner .banner-text { flex: 1; min-width: 0; }
+  .focus-banner strong { color: #8a5a08; }
+  .focus-banner button {
+    background: var(--star);
+    border-color: var(--star);
+    color: #fff;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .focus-banner button:hover { background: var(--star); border-color: var(--star); filter: brightness(1.08); }
+
   .board {
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 12px;
     padding: 0 16px 90px;
     align-items: start;
+  }
+  /* Focus mode: only Very Important renders, as a single centered column. */
+  .board.focus {
+    grid-template-columns: minmax(0, 460px);
+    justify-content: center;
   }
   .bucket {
     background: var(--panel);
@@ -167,6 +210,10 @@
   }
 
   .card {
+    position: relative;
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
     background: var(--panel);
     border: 1px solid var(--border);
     border-radius: 8px;
@@ -183,8 +230,60 @@
     box-shadow: 0 0 0 2px var(--accent-soft);
   }
   .card.dragging { opacity: 0.5; }
+  /* In focus mode only starred cards drag (to re-rank); candidates don't. */
+  .board.focus .card:not(.starred) { cursor: default; }
+  .card-body { flex: 1; min-width: 0; }
   .card-title { font-weight: 500; }
   .card-subtitle { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
+
+  /* ---- Starred "Most important" cards (Very Important column only) ------- */
+  .card.starred {
+    background: var(--star-tint);
+    border-color: var(--star-border);
+    box-shadow: none;
+  }
+  /* Rank badge (1–5) shown on the left of a starred card. */
+  .rank {
+    flex-shrink: 0;
+    width: 20px;
+    height: 20px;
+    margin-top: 1px;
+    border-radius: 50%;
+    background: var(--star);
+    color: #fff;
+    font-size: 11px;
+    font-weight: 600;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  /* Star toggle, right-aligned. Filled + gold when starred, outline otherwise. */
+  .star-btn {
+    flex-shrink: 0;
+    width: 24px;
+    height: 24px;
+    margin: -2px -2px 0 0;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: #c9ccd2;
+    cursor: pointer;
+  }
+  .star-btn svg { width: 16px; height: 16px; }
+  .star-btn.on { color: var(--star); }
+  .star-btn:hover { background: var(--accent-soft); }
+  .star-btn.disabled { opacity: 0.4; cursor: default; }
+  .star-btn.disabled:hover { background: transparent; }
+  /* Separates the starred group from the rest of Very Important. */
+  .podium-divider { height: 1px; background: var(--border); margin: 2px 2px; }
+  .star-count { color: var(--star); font-weight: 500; }
+  /* Rank prefix used on the board: invisible on screen, shown only in the PDF
+     (see the print stylesheet), so the on-screen board stays plain. */
+  .print-rank { display: none; }
 
   .move-bar[hidden] { display: none; }
   .move-bar {
@@ -272,15 +371,17 @@
     }
     body {
       display: grid;
-      /* header, hint, message, board. The message row is auto (0 when the
-         banner is hidden) so the board keeps the full 1fr height; explicit
-         row assignments keep placement stable whether or not the banner is
-         a grid item. */
-      grid-template-rows: auto auto auto minmax(0, 1fr);
+      /* header, hint, focus banner, message, board. The auto rows collapse to
+         0 when their element is hidden, so the board keeps the full 1fr
+         height; explicit row assignments keep placement stable regardless of
+         which auto rows are populated. */
+      grid-template-rows: auto auto auto auto minmax(0, 1fr);
     }
-    #message { grid-row: 3; }
+    .hint { grid-row: 2; }
+    #focusBanner { grid-row: 3; }
+    #message { grid-row: 4; }
     .print-page {
-      grid-row: 4;
+      grid-row: 5;
       min-height: 0;
       overflow: hidden;
     }
@@ -315,7 +416,7 @@
   @media print {
     html, body { height: auto; overflow: visible; }
     body { background: #fff; display: block; }
-    .app-header, .hint, .move-bar { display: none; }
+    .app-header, .hint, .focus-banner, .move-bar { display: none; }
     .print-page { display: table; }
     .print-page tbody { display: table-row-group; }
     .print-page tr { display: table-row; }
@@ -360,6 +461,21 @@
     }
     .card.selected { box-shadow: none; }
     .empty-note { text-align: left; padding: 2px 0; }
+    /* Starred cards print as a plain ranked list: "★ 1  FAMILY", no chrome.
+       This applies whether exported from focus mode (on-screen `.rank`) or from
+       the board (print-only `.print-rank`). */
+    .card.starred { background: none; border: none; }
+    .star-btn, .podium-divider { display: none; }
+    .rank, .print-rank {
+      display: inline;
+      background: none;
+      color: #000;
+      width: auto;
+      height: auto;
+      margin: 0;
+      font-weight: 600;
+    }
+    .rank::before, .print-rank::before { content: "★"; margin-right: 4px; }
   }
 </style>
 </head>
@@ -372,6 +488,7 @@
   <div class="header-actions">
     <button type="button" class="overflow-toggle" id="menuToggle" aria-label="More actions" aria-expanded="false" aria-controls="headerActions">⋯</button>
     <div class="actions" id="headerActions">
+      <button type="button" class="exit-focus" id="exitFocusBtn" hidden>Exit focus mode</button>
       <button class="primary" id="exportBtn">Export PDF</button>
       <button id="exportCsvBtn">Export CSV</button>
       <button id="importCsvBtn">Import CSV</button>
@@ -382,6 +499,11 @@
 <input type="file" id="csvFileInput" accept=".csv,text/csv" hidden>
 
 <div class="hint">Drag a card into a bucket, or tap a card and pick a destination. Changes save automatically in this browser.</div>
+
+<div class="focus-banner" id="focusBanner" hidden>
+  <span class="banner-text"><strong>All cards sorted.</strong> Ready to choose your most important values?</span>
+  <button type="button" id="enterFocusBtn">Enter focus mode</button>
+</div>
 
 <div class="message" id="message" role="status" hidden></div>
 
@@ -516,12 +638,15 @@ const STORAGE_KEY = "card-sorter-state-v1";
 /* state: bucket id -> ordered array of card titles */
 let state = loadState();
 let selectedCard = null;
+let printing = false; // true only during print, so the PDF renders the full board
 
 function loadState() {
   const empty = () => {
     const s = {};
     for (const b of BUCKETS) s[b.id] = [];
     s.unsorted = CARD_TITLES.slice();
+    s.starred = [];
+    s.focusMode = false;
     return s;
   };
   let saved = null;
@@ -545,6 +670,15 @@ function loadState() {
   for (const c of CARD_TITLES) {
     if (!placed.has(c)) s.unsorted.push(c);
   }
+  // Stars are a subset of Very Important, capped at 5, stored in rank order.
+  // Keep only saved stars that still live in b1, preserving their saved order.
+  const savedStarred = Array.isArray(saved.starred) ? saved.starred : [];
+  s.starred = [...new Set(savedStarred.filter((c) => s.b1.includes(c)))].slice(0, 5);
+  // Keep Very Important starred-first (rank = order within the starred group).
+  s.b1 = [...s.starred, ...s.b1.filter((c) => !s.starred.includes(c))];
+  // Focus mode is only valid once everything is sorted and Very Important has
+  // something to star; otherwise fall back to the board.
+  s.focusMode = saved.focusMode === true && s.unsorted.length === 0 && s.b1.length > 0;
   return s;
 }
 
@@ -569,6 +703,61 @@ function moveCard(card, toBucket, index) {
   } else {
     state[toBucket].splice(index, 0, card);
   }
+  // Reconcile stars: a card that left Very Important loses its star, and b1 is
+  // re-floated starred-first (this also re-ranks after a drag reorder).
+  enforceStarOrder();
+  saveState();
+  render();
+}
+
+function isStarred(card) { return state.starred.includes(card); }
+
+/* Keep the star set valid and Very Important ordered starred-first: drop any
+   star whose card has left b1, cap at 5, and float the starred cards to the top
+   in their current b1 order. A card's rank is its position among the starred
+   ones, so dragging within the group reorders the ranking. This runs after
+   every mutation, so the same order is used on the board and in focus mode. */
+function enforceStarOrder() {
+  state.starred = state.b1.filter(isStarred).slice(0, 5);
+  const starred = new Set(state.starred);
+  state.b1 = [...state.starred, ...state.b1.filter((c) => !starred.has(c))];
+}
+
+/* Focus mode becomes available once every card is sorted and Very Important
+   has at least one card to star. */
+function canFocus() {
+  return state.unsorted.length === 0 && state.b1.length > 0;
+}
+function enterFocus() {
+  if (!canFocus()) return;
+  state.focusMode = true;
+  selectedCard = null;
+  closeHeaderMenu();
+  saveState();
+  render();
+}
+function exitFocus() {
+  state.focusMode = false;
+  selectedCard = null;
+  closeHeaderMenu();
+  saveState();
+  render();
+}
+
+/* Star (as "most important") or unstar a Very Important card — only in focus
+   mode. A new star takes the lowest rank; ranking is then changed by dragging
+   the starred cards (which reorders them within the starred-first group).
+   Adding caps at 5. */
+function toggleStar(card) {
+  if (!state.focusMode || bucketOf(card) !== "b1") return;
+  const i = state.starred.indexOf(card);
+  if (i !== -1) {
+    state.starred.splice(i, 1);
+  } else {
+    if (state.starred.length >= 5) return;
+    state.starred.push(card);
+  }
+  enforceStarOrder();
   saveState();
   render();
 }
@@ -602,14 +791,24 @@ function render() {
   const board = document.getElementById("board");
   board.textContent = "";
 
-  for (const b of BUCKETS) {
+  // Focus mode silently drops if it's no longer valid (e.g. a CSV import
+  // unsorted some cards, or Very Important emptied out).
+  if (state.focusMode && !canFocus()) state.focusMode = false;
+  const focus = state.focusMode && !printing; // the PDF always renders the full board
+  board.classList.toggle("focus", focus);
+  updateFocusChrome(focus);
+
+  // On the board, all buckets render plainly. In focus mode only Very
+  // Important renders, and that's the only place stars/ranks appear.
+  const buckets = focus ? BUCKETS.filter((b) => b.id === "b1") : BUCKETS;
+  for (const b of buckets) {
     const section = document.createElement("section");
     section.className = "bucket";
     section.dataset.bucket = b.id;
     if (b.id === "unsorted" && state.unsorted.length === 0) {
       section.classList.add("print-hidden");
     }
-    if (selectedCard && bucketOf(selectedCard) !== b.id) {
+    if (!focus && selectedCard && bucketOf(selectedCard) !== b.id) {
       section.classList.add("drop-target-hint");
     }
 
@@ -621,12 +820,31 @@ function render() {
     count.className = "count";
     count.textContent = state[b.id].length + (state[b.id].length === 1 ? " card" : " cards");
     header.append(name, count);
+    // In focus mode, Very Important shows how many of the 5 star slots are used.
+    if (focus && b.id === "b1" && state.starred.length > 0) {
+      const stars = document.createElement("span");
+      stars.className = "count star-count";
+      stars.textContent = "★ " + state.starred.length + "/5";
+      header.append(stars);
+    }
 
     const list = document.createElement("div");
     list.className = "bucket-cards";
-    for (const card of state[b.id]) {
-      list.appendChild(renderCard(card));
-    }
+
+    // Very Important is always kept starred-first (see enforceStarOrder), so
+    // the first `starredN` cards are the ranked ones. The rank badge and podium
+    // divider only show in focus mode; on the board those cards look plain.
+    const starredN = b.id === "b1" ? state.starred.length : 0;
+    state[b.id].forEach((card, i) => {
+      const rank = i < starredN ? i + 1 : null; // starred cards occupy the top slots
+      list.appendChild(renderCard(card, b.id, rank, focus));
+      // Divider between the starred group and the rest of Very Important.
+      if (focus && starredN > 0 && i === starredN - 1 && state[b.id].length > starredN) {
+        const divider = document.createElement("div");
+        divider.className = "podium-divider";
+        list.appendChild(divider);
+      }
+    });
     if (state[b.id].length === 0) {
       const note = document.createElement("div");
       note.className = "empty-note";
@@ -647,9 +865,10 @@ function render() {
       section.classList.remove("drag-over");
       const card = e.dataTransfer.getData("text/plain");
       if (!card || bucketOf(card) === null) return;
-      // Insert at the drop position: the card lands above the first card
-      // whose vertical midpoint is below the pointer. Works for reordering
-      // within the same bucket too.
+      // Insert at the drop position: the card lands above the first card whose
+      // vertical midpoint is below the pointer. Works for reordering within a
+      // bucket too. In focus mode only starred cards are draggable, so this
+      // reorders their ranking (enforceStarOrder keeps them starred-first).
       const others = [...section.querySelectorAll(".bucket-cards .card")]
         .filter((el) => el.dataset.card !== card);
       let index = others.length;
@@ -661,9 +880,10 @@ function render() {
     });
 
     // Tap-to-assign target: tapping a bucket while a card is selected moves it;
-    // tapping the bucket it's already in just deselects.
+    // tapping the bucket it's already in just deselects. Disabled in focus mode
+    // (no moving cards between columns there).
     section.addEventListener("click", (e) => {
-      if (!selectedCard) return;
+      if (focus || !selectedCard) return;
       if (e.target.closest(".card")) return; // card taps handle selection
       const card = selectedCard;
       selectedCard = null;
@@ -680,41 +900,90 @@ function render() {
   renderMoveBar();
 }
 
-function renderCard(card) {
+/* Star icon: filled + gold when starred, hollow outline otherwise. Color comes
+   from the button's `color` so the same markup works for both states. */
+function starSvg(filled) {
+  const path = '<path d="M12 2l2.9 6.3 6.9.7-5.2 4.6 1.5 6.8L12 17.8 5.9 20.4l1.5-6.8L2.2 9l6.9-.7z"/>';
+  return filled
+    ? '<svg viewBox="0 0 24 24" fill="currentColor">' + path + "</svg>"
+    : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round">' + path + "</svg>";
+}
+
+/* rank is the 1-based "most important" position for a starred card, or null.
+   Star controls (toggle button, rank badge, tint) appear only in focus mode,
+   and only on Very Important cards. */
+function renderCard(card, bucketId, rank, focus) {
   const el = document.createElement("div");
   el.className = "card";
   el.dataset.card = card;
+  const starred = rank != null;
+  if (starred) {
+    // In focus mode the card gets the on-screen gold styling and a visible rank
+    // badge. On the board it looks plain; the rank badge is hidden on screen and
+    // surfaces only in the PDF (see the print stylesheet).
+    if (focus) el.classList.add("starred");
+    const badge = document.createElement("span");
+    badge.className = focus ? "rank" : "print-rank";
+    badge.textContent = rank;
+    el.appendChild(badge);
+  }
+
+  const body = document.createElement("div");
+  body.className = "card-body";
   const title = document.createElement("div");
   title.className = "card-title";
   title.textContent = card;
-  el.appendChild(title);
+  body.appendChild(title);
   const subtitle = CARD_BY_TITLE.get(card)?.subtitle;
   if (subtitle) {
     const sub = document.createElement("div");
     sub.className = "card-subtitle";
     sub.textContent = subtitle;
-    el.appendChild(sub);
+    body.appendChild(sub);
   }
-  el.draggable = true;
-  if (card === selectedCard) el.classList.add("selected");
+  el.appendChild(body);
 
-  el.addEventListener("click", () => selectCard(card));
-  el.addEventListener("dragstart", (e) => {
-    e.dataTransfer.setData("text/plain", card);
-    e.dataTransfer.effectAllowed = "move";
-    el.classList.add("dragging");
-    if (selectedCard) {
-      selectedCard = null;
-      renderMoveBar();
-    }
-  });
-  el.addEventListener("dragend", () => {
-    el.classList.remove("dragging");
-    // A canceled drag never re-renders the board, so repaint here to clear any
-    // stale selection ring / drop-target hints left over from dragstart. (After
-    // a successful drop moveCard already rendered; this is a cheap no-op refresh.)
-    render();
-  });
+  if (focus && bucketId === "b1") {
+    const atLimit = !starred && state.starred.length >= 5;
+    const star = document.createElement("button");
+    star.type = "button";
+    star.className = "star-btn" + (starred ? " on" : "") + (atLimit ? " disabled" : "");
+    star.setAttribute("aria-pressed", starred ? "true" : "false");
+    star.setAttribute("aria-label", starred ? "Unstar " + card : "Star " + card + " as most important");
+    star.title = starred ? "Most important" : atLimit ? "5 of 5 starred — unstar one first" : "Mark as most important";
+    star.innerHTML = starSvg(starred);
+    star.addEventListener("click", (e) => {
+      e.stopPropagation(); // don't select the card or trigger tap-to-assign
+      toggleStar(card);
+    });
+    el.appendChild(star);
+  }
+
+  // On the board every card drags (to sort/reorder). In focus mode only the
+  // starred cards drag, and only to reorder their ranking.
+  const draggable = focus ? starred : true;
+  el.draggable = draggable;
+  if (!focus && card === selectedCard) el.classList.add("selected");
+
+  if (!focus) el.addEventListener("click", () => selectCard(card));
+  if (draggable) {
+    el.addEventListener("dragstart", (e) => {
+      e.dataTransfer.setData("text/plain", card);
+      e.dataTransfer.effectAllowed = "move";
+      el.classList.add("dragging");
+      if (selectedCard) {
+        selectedCard = null;
+        renderMoveBar();
+      }
+    });
+    el.addEventListener("dragend", () => {
+      el.classList.remove("dragging");
+      // A canceled drag never re-renders the board, so repaint here to clear any
+      // stale selection ring / drop-target hints left over from dragstart. (After
+      // a successful drop moveCard already rendered; this is a cheap no-op refresh.)
+      render();
+    });
+  }
   return el;
 }
 
@@ -781,6 +1050,7 @@ for (const b of BUCKETS) {
 }
 
 function keyboardSortingActive(e) {
+  if (state.focusMode) return false; // no bucket sorting in focus mode
   if (e.metaKey || e.ctrlKey || e.altKey) return false;
   if (window.matchMedia("(max-width: 620px)").matches) return false;
   const el = e.target;
@@ -875,9 +1145,14 @@ let titleBeforePrint = document.title;
 window.addEventListener("beforeprint", () => {
   titleBeforePrint = document.title;
   document.title = "Personal Values Card Sort";
+  // The PDF always shows the full board (all buckets, ranked stars), even when
+  // exported from focus mode. Re-render as the board for the print, then
+  // restore the focus view afterwards. Covers the button and Ctrl/Cmd+P.
+  if (state.focusMode) { printing = true; render(); }
 });
 window.addEventListener("afterprint", () => {
   document.title = titleBeforePrint;
+  if (printing) { printing = false; render(); }
 });
 
 /* In-page two-step reset (native confirm() is blocked in some embedded
@@ -905,17 +1180,27 @@ resetBtn.addEventListener("click", () => {
 });
 
 /* ---- CSV export / import ------------------------------------------------
-   The CSV has one column per bucket (header = bucket label); each column
-   lists that bucket's cards top-to-bottom, padded with empty cells so every
-   row has all four columns. Import validates the header and the card set
-   before touching saved state. */
+   The CSV has one column per bucket (header = bucket label), each listing that
+   bucket's cards top-to-bottom, plus a "Most Important" column (just before
+   Very Important) listing the starred cards in rank order (row 1 = rank 1).
+   Cells are padded so every row has all columns. Import validates the header,
+   the card set, and the star set before touching saved state. The star column
+   is optional so older (starless) exports still import. */
+
+const STAR_COLUMN = "Most Important";
 
 function csvEscape(value) {
   return /[",\r\n]/.test(value) ? '"' + value.replace(/"/g, '""') + '"' : value;
 }
 
 function bucketsToCsv() {
-  const cols = BUCKETS.map((b) => ({ label: b.label, cards: state[b.id] }));
+  // The star column (rank order — state.starred is already ordered) sits
+  // directly before Very Important.
+  const cols = [];
+  for (const b of BUCKETS) {
+    if (b.id === "b1") cols.push({ label: STAR_COLUMN, cards: state.starred });
+    cols.push({ label: b.label, cards: state[b.id] });
+  }
   const maxLen = Math.max(0, ...cols.map((c) => c.cards.length));
   const lines = [cols.map((c) => csvEscape(c.label)).join(",")];
   for (let i = 0; i < maxLen; i++) {
@@ -963,27 +1248,44 @@ function csvToState(text) {
 
   const expected = BUCKETS.map((b) => b.label);
   const header = rows[0].map((h) => h.trim());
-  if (header.length !== expected.length) {
-    return { ok: false, error: "Expected " + expected.length + " columns (" + expected.join(", ") + "), but found " + header.length + "." };
-  }
 
-  const colBucket = [];
-  for (const name of header) {
+  // Each column is either a bucket or the (optional) star column. Buckets must
+  // all be present exactly once; the star column may appear at most once.
+  const colBucket = []; // per column: bucket id, or null for the star column
+  let starCol = -1;
+  const seenBucket = new Set();
+  for (let c = 0; c < header.length; c++) {
+    const name = header[c];
+    if (name === STAR_COLUMN) {
+      if (starCol !== -1) return { ok: false, error: 'Duplicate column: "' + STAR_COLUMN + '".' };
+      starCol = c;
+      colBucket.push(null);
+      continue;
+    }
     const b = BUCKETS.find((bk) => bk.label === name);
-    if (!b) return { ok: false, error: 'Unexpected column name: "' + name + '". Expected: ' + expected.join(", ") + "." };
-    if (colBucket.includes(b.id)) return { ok: false, error: 'Duplicate column: "' + name + '".' };
+    if (!b) return { ok: false, error: 'Unexpected column name: "' + name + '". Expected: ' + expected.join(", ") + ", " + STAR_COLUMN + "." };
+    if (seenBucket.has(b.id)) return { ok: false, error: 'Duplicate column: "' + name + '".' };
+    seenBucket.add(b.id);
     colBucket.push(b.id);
+  }
+  if (seenBucket.size !== BUCKETS.length) {
+    const missingCols = expected.filter((l) => !header.includes(l));
+    return { ok: false, error: "Missing column(s): " + missingCols.join(", ") + "." };
   }
 
   const newState = {};
   for (const b of BUCKETS) newState[b.id] = [];
+  newState.starred = [];
+  newState.focusMode = false; // an import always lands on the board
   const known = new Set(CARD_TITLES);
   const seen = new Set();
+  const starTitles = []; // star column cells, in row order = rank order
   for (let r = 1; r < rows.length; r++) {
     const cells = rows[r];
-    for (let c = 0; c < colBucket.length; c++) {
+    for (let c = 0; c < header.length; c++) {
       const title = (cells[c] || "").trim();
       if (!title) continue;
+      if (c === starCol) { starTitles.push(title); continue; } // validated below, not a placement
       if (!known.has(title)) return { ok: false, error: 'Unknown card: "' + title + '".' };
       if (seen.has(title)) return { ok: false, error: 'Card "' + title + '" appears more than once.' };
       seen.add(title);
@@ -995,6 +1297,20 @@ function csvToState(text) {
     const missing = CARD_TITLES.filter((t) => !seen.has(t));
     return { ok: false, error: missing.length + " card(s) from the current set are missing, e.g. “" + missing[0] + "”." };
   }
+
+  // Validate the star set: known cards, in Very Important, unique, at most 5.
+  const starSeen = new Set();
+  for (const title of starTitles) {
+    if (!known.has(title)) return { ok: false, error: 'Unknown starred card: "' + title + '".' };
+    if (!newState.b1.includes(title)) return { ok: false, error: 'Starred card "' + title + '" must be in the ' + BUCKETS[1].label + " column." };
+    if (starSeen.has(title)) return { ok: false, error: 'Starred card "' + title + '" appears more than once.' };
+    starSeen.add(title);
+  }
+  if (starTitles.length > 5) return { ok: false, error: "At most 5 cards can be starred, but found " + starTitles.length + "." };
+  newState.starred = starTitles.slice(); // rank order
+  // Keep Very Important starred-first, matching how the app stores it.
+  newState.b1 = [...newState.starred, ...newState.b1.filter((c) => !starSeen.has(c))];
+
   return { ok: true, state: newState };
 }
 
@@ -1052,6 +1368,25 @@ csvFileInput.addEventListener("change", () => {
   };
   reader.readAsText(file);
 });
+
+/* ---- Focus mode chrome --------------------------------------------------
+   The banner is the only way in (shown whenever eligible and not already in
+   focus); the header button is the way out. The hint line swaps to focus
+   instructions while in focus mode. */
+const hintEl = document.querySelector(".hint");
+const focusBanner = document.getElementById("focusBanner");
+const exitFocusBtn = document.getElementById("exitFocusBtn");
+const BOARD_HINT = "Drag a card into a bucket, or tap a card and pick a destination. Changes save automatically in this browser.";
+const FOCUS_HINT = "Star up to 5 of your most important values, then drag the gold cards to rank them.";
+
+function updateFocusChrome(focus) {
+  exitFocusBtn.hidden = !focus;
+  focusBanner.hidden = focus || !canFocus();
+  hintEl.textContent = focus ? FOCUS_HINT : BOARD_HINT;
+}
+
+exitFocusBtn.addEventListener("click", exitFocus);
+document.getElementById("enterFocusBtn").addEventListener("click", enterFocus);
 
 render();
 </script>
