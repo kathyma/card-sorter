@@ -178,11 +178,16 @@
   }
   .bucket-header {
     display: flex;
-    align-items: baseline;
+    align-items: center;
     gap: 8px;
     padding: 10px 12px;
     border-bottom: 1px solid var(--border);
     font-weight: 600;
+    /* Reserve enough height to fit the Copy results button (plus its padding),
+       so the header is the same height with or without the button — adding it
+       never shifts the layout. The label and meta keep their own baseline
+       alignment via .bucket-title-wrap. */
+    min-height: 50px;
     position: sticky;
     top: 0;
     background: inherit;
@@ -192,6 +197,46 @@
     font-weight: 400;
     font-size: 13px;
     color: var(--muted);
+  }
+  /* Label + meta group. Normally the label and meta (card count, star count)
+     sit side by side; when the Copy results button leaves too little room, the
+     meta wraps onto its own line beneath the bucket label. */
+  .bucket-title-wrap {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 2px 8px;
+  }
+  .bucket-meta {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 8px;
+  }
+  /* "Copy results": shown in the Very Important header in focus mode once all 5
+     slots are filled. Pinned to the header's top line; briefly reads "Copied". */
+  .copy-results {
+    flex: 0 0 auto;
+    margin-left: auto;
+    white-space: nowrap;
+    padding: 5px 12px;
+    font-size: 13px;
+    line-height: 1.2;
+    font-weight: 600;
+    background: var(--star);
+    border-color: var(--star);
+    color: #fff;
+  }
+  .copy-results:hover { background: var(--star); border-color: var(--star); filter: brightness(1.08); }
+  /* Copied confirmation: switch to the same soft gold-outlined look as the
+     "Exit focus mode" button rather than a green state. */
+  .copy-results.copied,
+  .copy-results.copied:hover {
+    background: var(--star-tint);
+    border-color: var(--star-border);
+    color: #8a5a08;
+    filter: none;
   }
   .bucket-cards {
     padding: 10px;
@@ -465,7 +510,7 @@
        This applies whether exported from focus mode (on-screen `.rank`) or from
        the board (print-only `.print-rank`). */
     .card.starred { background: none; border: none; }
-    .star-btn, .podium-divider { display: none; }
+    .star-btn, .podium-divider, .copy-results { display: none; }
     .rank, .print-rank {
       display: inline;
       background: none;
@@ -814,18 +859,39 @@ function render() {
 
     const header = document.createElement("div");
     header.className = "bucket-header";
+    const titleWrap = document.createElement("div");
+    titleWrap.className = "bucket-title-wrap";
     const name = document.createElement("span");
+    name.className = "bucket-label";
     name.textContent = b.label;
+    const meta = document.createElement("span");
+    meta.className = "bucket-meta";
     const count = document.createElement("span");
     count.className = "count";
     count.textContent = state[b.id].length + (state[b.id].length === 1 ? " card" : " cards");
-    header.append(name, count);
+    meta.appendChild(count);
     // In focus mode, Very Important shows how many of the 5 star slots are used.
     if (focus && b.id === "b1" && state.starred.length > 0) {
       const stars = document.createElement("span");
       stars.className = "count star-count";
       stars.textContent = "★ " + state.starred.length + "/5";
-      header.append(stars);
+      meta.appendChild(stars);
+    }
+    titleWrap.append(name, meta);
+    header.appendChild(titleWrap);
+    // Copy results: once all 5 most-important values are chosen, offer a one-tap
+    // copy of the ranked list. It stays on the header's top line; the meta wraps
+    // beneath the label when space is tight.
+    if (focus && b.id === "b1" && state.starred.length === 5) {
+      const copyBtn = document.createElement("button");
+      copyBtn.type = "button";
+      copyBtn.className = "copy-results";
+      copyBtn.textContent = COPY_LABEL;
+      copyBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        copyResults(copyBtn);
+      });
+      header.appendChild(copyBtn);
     }
 
     const list = document.createElement("div");
@@ -1368,6 +1434,63 @@ csvFileInput.addEventListener("change", () => {
   };
   reader.readAsText(file);
 });
+
+/* ---- Copy results -------------------------------------------------------
+   Once all 5 most-important values are starred, the Very Important header
+   shows a "Copy results" button that copies the ranked list to the clipboard
+   and briefly confirms with "Copied". */
+const COPY_LABEL = "Copy results";
+let copyResetTimer = null;
+
+function resultsText() {
+  const lines = ["My most important values are:"];
+  state.starred.forEach((card, i) => lines.push(i + 1 + ". " + card));
+  return lines.join("\n");
+}
+
+/* Clipboard write with a fallback for browsers/contexts where the async
+   Clipboard API is unavailable (older mobile Safari, non-secure origins). */
+async function writeClipboard(text) {
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch (e) {
+    // fall through to the execCommand fallback
+  }
+  try {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.setAttribute("readonly", "");
+    ta.style.position = "fixed";
+    ta.style.top = "-1000px";
+    ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    ta.select();
+    ta.setSelectionRange(0, text.length); // iOS needs an explicit range
+    const ok = document.execCommand("copy");
+    ta.remove();
+    return ok;
+  } catch (e) {
+    return false;
+  }
+}
+
+async function copyResults(btn) {
+  const ok = await writeClipboard(resultsText());
+  if (!ok) {
+    showMessage("Couldn’t copy to the clipboard. Try again.", "error");
+    return;
+  }
+  btn.classList.add("copied");
+  btn.textContent = "Copied";
+  clearTimeout(copyResetTimer);
+  copyResetTimer = setTimeout(() => {
+    btn.classList.remove("copied");
+    btn.textContent = COPY_LABEL;
+  }, 1600);
+}
 
 /* ---- Focus mode chrome --------------------------------------------------
    The banner is the only way in (shown whenever eligible and not already in
